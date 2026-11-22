@@ -1,0 +1,1738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>3D Dungeon Crawler: The Dark Descent (FPS Web Edition)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #08070a; font-family: 'Cinzel', 'Trajan Pro', 'Georgia', serif; color: #e5ded2; }
+    #canvas-container { width: 100%; height: 100%; position: absolute; top: 0; left: 0; z-index: 1; }
+    
+    /* Crosshair */
+    #crosshair {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 24px; height: 24px; pointer-events: none; z-index: 10;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ''; position: absolute; background: rgba(255, 255, 255, 0.85);
+    }
+    #crosshair::before { top: 11px; left: 0; width: 24px; height: 2px; }
+    #crosshair::after { top: 0; left: 11px; width: 2px; height: 24px; }
+    #crosshair-dot {
+      position: absolute; top: 10px; left: 10px; width: 4px; height: 4px;
+      background: #ffcc00; border-radius: 50%;
+    }
+
+    #interaction-prompt {
+      position: absolute; top: 56%; left: 50%; transform: translate(-50%, 0);
+      font-size: 16px; font-weight: bold; color: #ffd966; text-shadow: 0 2px 8px #000;
+      background: rgba(15, 12, 10, 0.7); padding: 4px 14px; border: 1px solid #c99a3e;
+      border-radius: 4px; pointer-events: none; z-index: 10; display: none;
+    }
+
+    /* HUD */
+    #hud {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none; z-index: 5;
+    }
+    .hud-top-left {
+      position: absolute; top: 20px; left: 24px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .bar-container {
+      width: 240px; height: 22px; background: rgba(15, 15, 20, 0.85);
+      border: 2px solid #8c6e32; border-radius: 3px; position: relative; overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.7);
+    }
+    .bar-fill { height: 100%; transition: width 0.15s ease-out; }
+    #hp-fill { background: linear-gradient(90deg, #8a1313, #e62e2e); width: 100%; }
+    #stamina-fill { background: linear-gradient(90deg, #1f7a2a, #3cd04f); width: 100%; height: 16px; }
+    .stamina-container { width: 240px; height: 18px; }
+    .bar-label {
+      position: absolute; width: 100%; height: 100%; top: 0; left: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: bold; color: #fff; text-shadow: 0 1px 4px #000;
+    }
+    .level-info {
+      font-size: 15px; color: #f4d06f; font-weight: bold; text-shadow: 0 2px 4px #000;
+    }
+
+    /* Minimap */
+    #minimap-wrapper {
+      position: absolute; top: 20px; right: 24px; width: 140px; height: 140px;
+      border: 2px solid #8c6e32; border-radius: 6px; background: rgba(10, 10, 14, 0.85);
+      overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.8);
+    }
+    #minimap-canvas { width: 100%; height: 100%; }
+
+    /* Bottom stats */
+    .hud-bottom-left {
+      position: absolute; bottom: 20px; left: 24px; font-size: 14px;
+      background: rgba(15, 12, 18, 0.8); padding: 10px 16px; border: 1px solid #5a4820;
+      border-radius: 4px; display: flex; flex-direction: column; gap: 4px;
+    }
+    .gold-count { color: #f7d046; font-weight: bold; }
+    .gear-info { color: #cfd8dc; font-size: 13px; }
+    .potion-info { color: #81c784; font-size: 12px; }
+
+    /* Boss Bar */
+    #boss-bar-wrap {
+      position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
+      width: 400px; display: none; flex-direction: column; align-items: center; gap: 4px;
+    }
+    #boss-name { font-size: 16px; font-weight: bold; color: #ff4d4d; letter-spacing: 2px; text-shadow: 0 2px 6px #000; }
+    #boss-bar {
+      width: 100%; height: 20px; background: rgba(20, 10, 25, 0.9);
+      border: 2px solid #a83232; border-radius: 3px; position: relative; overflow: hidden;
+    }
+    #boss-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #7b1fa2, #e91e63); }
+
+    /* Damage indicator & toast */
+    #toast-msg {
+      position: absolute; top: 90px; left: 50%; transform: translateX(-50%);
+      font-size: 18px; color: #ffd54f; font-weight: bold; text-shadow: 0 2px 8px #000;
+      opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 15;
+    }
+    #damage-flash {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(circle, transparent 60%, rgba(180, 0, 0, 0.6) 100%);
+      pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 4;
+    }
+
+    /* Menus & Overlays */
+    .menu-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(6, 5, 8, 0.88); z-index: 50; display: flex;
+      align-items: center; justify-content: center; backdrop-filter: blur(4px);
+    }
+    .fantasy-panel {
+      background: linear-gradient(180deg, #1c1822, #100d14);
+      border: 3px solid #b8860b; border-radius: 8px; padding: 32px 48px;
+      box-shadow: 0 0 35px rgba(0, 0, 0, 0.9), inset 0 0 15px rgba(184, 134, 11, 0.2);
+      text-align: center; max-width: 550px; width: 90%;
+    }
+    .panel-title {
+      font-size: 28px; color: #f5cf6d; letter-spacing: 2px; margin-bottom: 6px;
+      text-shadow: 0 2px 10px rgba(245, 207, 109, 0.4);
+    }
+    .panel-subtitle {
+      font-size: 13px; color: #a69ea1; margin-bottom: 24px; letter-spacing: 1px;
+    }
+    .btn-group { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+    .fantasy-btn {
+      background: linear-gradient(180deg, #322b3a, #1b1722);
+      border: 2px solid #8c6e32; color: #f2e6d8; padding: 12px 24px;
+      font-size: 15px; font-weight: bold; border-radius: 4px; cursor: pointer;
+      letter-spacing: 1px; transition: all 0.2s; font-family: inherit;
+    }
+    .fantasy-btn:hover {
+      background: linear-gradient(180deg, #4f415c, #292233);
+      border-color: #ffd700; color: #ffd700; transform: translateY(-2px);
+      box-shadow: 0 4px 15px rgba(255, 215, 0, 0.25);
+    }
+    .fantasy-btn:active { transform: translateY(0); }
+    .instructions-box {
+      text-align: left; font-size: 13px; line-height: 1.6; color: #cfd8dc;
+      background: rgba(0,0,0,0.4); padding: 16px; border-radius: 4px; margin-bottom: 16px;
+    }
+    .instructions-box b { color: #f5cf6d; }
+
+    /* Inventory Modal */
+    #inv-modal { display: none; }
+    .inv-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0;
+    }
+    .inv-slot {
+      height: 60px; background: rgba(20, 16, 26, 0.9); border: 1px solid #735a26;
+      border-radius: 4px; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; font-size: 11px; cursor: pointer; transition: all 0.15s;
+    }
+    .inv-slot:hover { border-color: #ffd700; background: rgba(50, 40, 65, 0.9); }
+    .inv-slot.empty { color: #555; cursor: default; }
+
+    /* Mobile virtual controls for touch devices */
+    #mobile-controls {
+      display: none; position: absolute; bottom: 15px; width: 100%; pointer-events: none; z-index: 30;
+    }
+    @media (max-width: 768px) {
+      .hud-top-left { top: 10px; left: 10px; }
+      .bar-container { width: 160px; }
+      #minimap-wrapper { width: 100px; height: 100px; top: 10px; right: 10px; }
+    }
+  </style>
+  <script src="three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+    }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="damage-flash"></div>
+  <div id="crosshair"><div id="crosshair-dot"></div></div>
+  <div id="interaction-prompt">[E] Interact</div>
+  <div id="toast-msg"></div>
+
+  <!-- HUD Overlay -->
+  <div id="hud">
+    <div class="hud-top-left">
+      <div id="level-title" class="level-info">Lv. 1 - The Forgotten Crypt</div>
+      <div class="bar-container">
+        <div id="hp-fill" class="bar-fill"></div>
+        <div id="hp-text" class="bar-label">HP: 100 / 100</div>
+      </div>
+      <div class="bar-container stamina-container">
+        <div id="stamina-fill" class="bar-fill"></div>
+        <div id="stamina-text" class="bar-label">Stamina: 100 / 100</div>
+      </div>
+    </div>
+
+    <div id="boss-bar-wrap">
+      <div id="boss-name">THE DARK KING</div>
+      <div id="boss-bar"><div id="boss-fill"></div></div>
+    </div>
+
+    <div id="minimap-wrapper">
+      <canvas id="minimap-canvas" width="140" height="140"></canvas>
+    </div>
+
+    <div class="hud-bottom-left">
+      <div id="gold-display" class="gold-count">Gold: 0</div>
+      <div id="gear-display" class="gear-info">Weapon: Steel Longsword | Shield: Buckler</div>
+      <div id="potion-display" class="potion-info">[Q] Drink Health Potion (x2) | [I] Inventory</div>
+    </div>
+  </div>
+
+  <!-- Main Menu -->
+  <div id="main-menu" class="menu-overlay">
+    <div class="fantasy-panel">
+      <h1 class="panel-title">DUNGEON CRAWLER 3D</h1>
+      <p class="panel-subtitle">- THE DARK DESCENT (FIRST-PERSON) -</p>
+      <div class="btn-group">
+        <button class="fantasy-btn" id="btn-start">START NEW GAME</button>
+        <button class="fantasy-btn" id="btn-controls">CONTROLS & GUIDE</button>
+        <button class="fantasy-btn" id="btn-toggle-sound">SOUND: ON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls Guide Modal -->
+  <div id="controls-modal" class="menu-overlay" style="display: none;">
+    <div class="fantasy-panel">
+      <h2 class="panel-title">CONTROLS & GUIDE</h2>
+      <div class="instructions-box">
+        <b>[W / A / S / D]</b> : Move Forward / Strafe Left & Right / Backward<br>
+        <b>[Mouse Look]</b> : Look around (First-Person Camera)<br>
+        <b>[Left Click]</b> : Melee Weapon Attack / Slash<br>
+        <b>[Right Click]</b> : Raise Shield to Block (Reduces 80% damage)<br>
+        <b>[Spacebar]</b> : Jump<br>
+        <b>[Left Shift]</b> : Sprint<br>
+        <b>[E]</b> : Interact (Open Doors, Chests, Portals)<br>
+        <b>[Q]</b> : Drink Health Potion<br>
+        <b>[I]</b> : Open / Close Inventory Sheet<br>
+        <b>[Esc]</b> : Pause Game
+      </div>
+      <button class="fantasy-btn" id="btn-close-controls">BACK TO MENU</button>
+    </div>
+  </div>
+
+  <!-- Pause Menu -->
+  <div id="pause-menu" class="menu-overlay" style="display: none;">
+    <div class="fantasy-panel">
+      <h2 class="panel-title">GAME PAUSED</h2>
+      <div class="btn-group">
+        <button class="fantasy-btn" id="btn-resume">RESUME</button>
+        <button class="fantasy-btn" id="btn-restart">RESTART LEVEL</button>
+        <button class="fantasy-btn" id="btn-quit">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inventory Sheet Modal -->
+  <div id="inv-modal" class="menu-overlay">
+    <div class="fantasy-panel" style="max-width: 620px;">
+      <h2 class="panel-title">HERO INVENTORY & ATTRIBUTES</h2>
+      <div id="inv-stats-summary" style="font-size: 13px; color: #cfd8dc; margin-bottom: 10px;"></div>
+      <div class="inv-grid" id="inv-grid"></div>
+      <div id="inv-item-details" style="min-height: 40px; font-size: 13px; color: #ffd54f; margin-bottom: 12px;">Click an item to inspect or equip</div>
+      <button class="fantasy-btn" id="btn-close-inv">CLOSE [I / ESC]</button>
+    </div>
+  </div>
+
+  <!-- Game Over Screen -->
+  <div id="game-over-modal" class="menu-overlay" style="display: none;">
+    <div class="fantasy-panel">
+      <h1 class="panel-title" style="color: #ff3333;">YOU HAVE FALLEN</h1>
+      <p class="panel-subtitle">The ancient dungeon depths have claimed your life.</p>
+      <div class="btn-group">
+        <button class="fantasy-btn" id="btn-gameover-restart">RESTART LEVEL</button>
+        <button class="fantasy-btn" id="btn-gameover-menu">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Victory Screen -->
+  <div id="victory-modal" class="menu-overlay" style="display: none;">
+    <div class="fantasy-panel">
+      <h1 class="panel-title" style="color: #ffd700;">DUNGEON CONQUERED!</h1>
+      <p class="panel-subtitle">The Dark King is vanquished and you have escaped to the sunlight!</p>
+      <div id="victory-stats" class="instructions-box" style="text-align: center;"></div>
+      <div class="btn-group">
+        <button class="fantasy-btn" id="btn-victory-restart">PLAY AGAIN</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================================
+       AUDIO SYNTHESIZER (Web Audio API - 23 Procedural Sounds & Musical Themes)
+       ========================================================================= */
+    const AudioEngine = {
+      ctx: null,
+      enabled: true,
+      masterVol: 0.8,
+
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        }
+        if (this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      },
+
+      playSwordSwing() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const bufferSize = this.ctx.sampleRate * 0.25;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const output = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(1800, now);
+        filter.frequency.exponentialRampToValueAtTime(400, now + 0.22);
+        filter.Q.setValueAtTime(3, now);
+
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.01, now);
+        gain.gain.linearRampToValueAtTime(0.6 * this.masterVol, now + 0.08);
+        gain.gain.linearRampToValueAtTime(0.01, now + 0.24);
+
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start(now);
+      },
+
+      playSwordHit() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        // Metal clang
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(320, now + 0.2);
+        gain.gain.setValueAtTime(0.7 * this.masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      },
+
+      playShieldBlock() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(320, now);
+        osc.frequency.exponentialRampToValueAtTime(120, now + 0.3);
+        gain.gain.setValueAtTime(0.9 * this.masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.32);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.32);
+      },
+
+      playStep() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(85 + Math.random() * 20, now);
+        gain.gain.setValueAtTime(0.25 * this.masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.08);
+      },
+
+      playHurt() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(140, now);
+        osc.frequency.linearRampToValueAtTime(70, now + 0.25);
+        gain.gain.setValueAtTime(0.5 * this.masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      },
+
+      playChestOpen() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        // Chime arpeggio: C6, E6, G6, C7
+        const notes = [1046, 1318, 1568, 2093];
+        notes.forEach((freq, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const t = now + idx * 0.1;
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, t);
+          gain.gain.setValueAtTime(0.4 * this.masterVol, t);
+          gain.gain.exponentialRampToValueAtTime(0.01, t + 0.35);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.35);
+        });
+      },
+
+      playPotion() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        for (let i = 0; i < 3; i++) {
+          const t = now + i * 0.12;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(360 - i * 40, t);
+          gain.gain.setValueAtTime(0.35 * this.masterVol, t);
+          gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.1);
+        }
+      },
+
+      playDoorOpen() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(95, now);
+        osc.frequency.linearRampToValueAtTime(135, now + 0.6);
+        gain.gain.setValueAtTime(0.4 * this.masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.65);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.65);
+      },
+
+      playLevelUp() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const freqs = [523, 659, 784, 1046];
+        freqs.forEach((f, idx) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          const t = now + idx * 0.15;
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(f, t);
+          gain.gain.setValueAtTime(0.45 * this.masterVol, t);
+          gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(t);
+          osc.stop(t + 0.5);
+        });
+      },
+
+      playTrap() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(450, now);
+        osc.frequency.exponentialRampToValueAtTime(90, now + 0.2);
+        gain.gain.setValueAtTime(0.7 * this.masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.22);
+      },
+
+      playBossSlam() {
+        if (!this.enabled || !this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(55, now);
+        gain.gain.setValueAtTime(0.9 * this.masterVol, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.6);
+      }
+    };
+
+    /* =========================================================================
+       TEXTURE GENERATOR (Dynamic HTML5 Canvas Procedural Textures)
+       ========================================================================= */
+    const TextureGen = {
+      cache: {},
+
+      createStoneWall(colorBase, accent) {
+        const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = colorBase; ctx.fillRect(0, 0, 256, 256);
+        const rows = 8, cols = 4, bh = 32, bw = 64;
+        for (let r = 0; r < rows; r++) {
+          const offset = (r % 2 === 0) ? 0 : bw / 2;
+          for (let col = -1; col <= cols; col++) {
+            ctx.fillStyle = accent;
+            ctx.fillRect(col * bw + offset + 2, r * bh + 2, bw - 4, bh - 4);
+          }
+        }
+        return new THREE.CanvasTexture(c);
+      },
+
+      createFloor(tileColor, groutColor) {
+        const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = groutColor; ctx.fillRect(0, 0, 256, 256);
+        for (let x = 0; x < 256; x += 64) {
+          for (let y = 0; y < 256; y += 64) {
+            ctx.fillStyle = tileColor;
+            ctx.fillRect(x + 2, y + 2, 60, 60);
+          }
+        }
+        return new THREE.CanvasTexture(c);
+      },
+
+      createWood() {
+        const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#4a2f13'; ctx.fillRect(0, 0, 128, 128);
+        ctx.fillStyle = '#613e1a';
+        for (let y = 0; y < 128; y += 32) {
+          ctx.fillRect(0, y + 2, 128, 28);
+        }
+        return new THREE.CanvasTexture(c);
+      }
+    };
+
+    /* =========================================================================
+       GAME STATE & ARCHITECTURE
+       ========================================================================= */
+    const TILE_SIZE = 4.0;
+    let scene, camera, renderer;
+    let player, levelManager;
+    let clock = new THREE.Clock();
+    let isGameRunning = false;
+    let isPaused = false;
+    let currentLevelIndex = 1;
+
+    // Keys State
+    const keys = { w: false, a: false, s: false, d: false, shift: false };
+
+    // Player Model State
+    const playerStats = {
+      level: 1, xp: 0, xpNext: 100,
+      hp: 100, maxHp: 100,
+      stamina: 100, maxStamina: 100,
+      gold: 0, baseAtk: 12, baseDef: 3,
+      potions: 2, enemiesDefeated: 0, chestsOpened: 0,
+      equippedWeapon: { name: 'Steel Longsword', atk: 24, id: 'steel_sword' },
+      equippedShield: { name: "Knight's Crest Shield", def: 14, id: 'knight_shield' },
+      inventory: [
+        { name: 'Minor Health Potion', type: 'POTION', val: 35 },
+        { name: 'Minor Health Potion', type: 'POTION', val: 35 }
+      ],
+      hasKey: { crypt_key: false, cavern_key: false, boss_key: false }
+    };
+
+    /* =========================================================================
+       INITIALIZE 3D ENGINE & SCENE
+       ========================================================================= */
+    function initEngine() {
+      const container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x0a0910, 0.045);
+
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 120);
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      container.appendChild(renderer.domElement);
+
+      // Ambient & Directional Lighting
+      const ambientLight = new THREE.AmbientLight(0x2d2836, 1.2);
+      scene.add(ambientLight);
+
+      const dirLight = new THREE.DirectionalLight(0x4a4358, 0.8);
+      dirLight.position.set(10, 20, 15);
+      scene.add(dirLight);
+
+      initPlayer();
+      initEvents();
+      loadLevel(1);
+
+      animate();
+    }
+
+    /* =========================================================================
+       FIRST-PERSON PLAYER & VIEWMODEL
+       ========================================================================= */
+    function initPlayer() {
+      player = {
+        pos: new THREE.Vector3(8, 1.7, 8),
+        vel: new THREE.Vector3(),
+        yaw: 0,
+        pitch: 0,
+        isBlocking: false,
+        isAttacking: false,
+        swingTimer: 0,
+        headBobTimer: 0,
+        stepTimer: 0,
+        cameraShake: 0,
+        viewmodel: new THREE.Group(),
+        weaponMesh: null,
+        shieldMesh: null,
+
+        update(delta) {
+          // Stamina regen
+          if (this.isBlocking) {
+            playerStats.stamina = Math.min(playerStats.maxStamina, playerStats.stamina + delta * 10);
+          } else if (keys.shift && (keys.w || keys.s || keys.a || keys.d)) {
+            playerStats.stamina = Math.max(0, playerStats.stamina - delta * 25);
+          } else {
+            playerStats.stamina = Math.min(playerStats.maxStamina, playerStats.stamina + delta * 24);
+          }
+
+          // Movement
+          const moveSpeed = (keys.shift && playerStats.stamina > 5) ? 9.5 : (this.isBlocking ? 3.5 : 6.0);
+          const moveDir = new THREE.Vector3();
+          if (keys.w) moveDir.z -= 1;
+          if (keys.s) moveDir.z += 1;
+          if (keys.a) moveDir.x -= 1;
+          if (keys.d) moveDir.x += 1;
+
+          if (moveDir.lengthSq() > 0) {
+            moveDir.normalize();
+            // Rotate move direction by player yaw
+            const sin = Math.sin(this.yaw);
+            const cos = Math.cos(this.yaw);
+            const dx = (moveDir.x * cos - moveDir.z * sin) * moveSpeed * delta;
+            const dz = (moveDir.x * sin + moveDir.z * cos) * moveSpeed * delta;
+
+            attemptMove(dx, dz);
+
+            // Head bob & footsteps
+            this.headBobTimer += delta * (keys.shift ? 14 : 9);
+            this.stepTimer += delta * (keys.shift ? 2.5 : 1.7);
+            if (this.stepTimer > 1.0) {
+              this.stepTimer = 0;
+              AudioEngine.playStep();
+            }
+          }
+
+          // Camera Shake
+          let shakeX = 0, shakeY = 0;
+          if (this.cameraShake > 0) {
+            this.cameraShake = Math.max(0, this.cameraShake - delta * 2.5);
+            shakeX = (Math.random() - 0.5) * this.cameraShake * 0.15;
+            shakeY = (Math.random() - 0.5) * this.cameraShake * 0.15;
+          }
+
+          const bobOffset = Math.sin(this.headBobTimer) * (keys.shift ? 0.08 : 0.045);
+          camera.position.set(this.pos.x + shakeX, this.pos.y + bobOffset + shakeY, this.pos.z);
+
+          // Update Viewmodel Transform
+          this.updateViewmodel(delta);
+
+          // Raycast for interactions
+          checkInteractionRaycast();
+        },
+
+        updateViewmodel(delta) {
+          this.viewmodel.position.copy(camera.position);
+          this.viewmodel.rotation.copy(camera.rotation);
+
+          // Swing Slash Animation
+          if (this.isAttacking) {
+            this.swingTimer += delta * 4.5;
+            if (this.swingTimer >= Math.PI) {
+              this.isAttacking = false;
+              this.swingTimer = 0;
+              this.weaponMesh.position.set(0.38, -0.35, -0.65);
+              this.weaponMesh.rotation.set(0.1, -0.1, 0);
+            } else {
+              const swing = Math.sin(this.swingTimer);
+              this.weaponMesh.position.set(0.38 - swing * 0.2, -0.35 - swing * 0.15, -0.65 + swing * 0.15);
+              this.weaponMesh.rotation.set(0.1 + swing * 1.4, -0.1 - swing * 0.8, swing * 0.5);
+            }
+          }
+
+          // Shield Block Animation
+          if (this.shieldMesh) {
+            if (this.isBlocking) {
+              this.shieldMesh.position.set(-0.15, -0.12, -0.45);
+              this.shieldMesh.rotation.set(0.05, 0.2, -0.05);
+            } else {
+              this.shieldMesh.position.set(-0.38, -0.36, -0.62);
+              this.shieldMesh.rotation.set(0.1, 0.35, -0.1);
+            }
+          }
+        }
+      };
+
+      // Create Viewmodel Meshes
+      createViewmodelMeshes();
+      scene.add(player.viewmodel);
+    }
+
+    function createViewmodelMeshes() {
+      // Steel Sword Viewmodel
+      const weaponGroup = new THREE.Group();
+      const bladeGeo = new THREE.BoxGeometry(0.04, 0.85, 0.015);
+      const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd8dde5, metalness: 0.85, roughness: 0.2 });
+      const blade = new THREE.Mesh(bladeGeo, bladeMat);
+      blade.position.y = 0.42;
+      weaponGroup.add(blade);
+
+      const guardGeo = new THREE.BoxGeometry(0.24, 0.03, 0.04);
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xd4af37, metalness: 0.9, roughness: 0.3 });
+      const guard = new THREE.Mesh(guardGeo, goldMat);
+      guard.position.y = 0.02;
+      weaponGroup.add(guard);
+
+      const gripGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.18, 8);
+      const gripMat = new THREE.MeshStandardMaterial({ color: 0x4a2a16, roughness: 0.8 });
+      const grip = new THREE.Mesh(gripGeo, gripMat);
+      grip.position.y = -0.08;
+      weaponGroup.add(grip);
+
+      weaponGroup.position.set(0.38, -0.35, -0.65);
+      weaponGroup.rotation.set(0.1, -0.1, 0);
+      player.weaponMesh = weaponGroup;
+      player.viewmodel.add(weaponGroup);
+
+      // Shield Viewmodel
+      const shieldGroup = new THREE.Group();
+      const bodyGeo = new THREE.BoxGeometry(0.35, 0.5, 0.03);
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.7 });
+      const shieldBody = new THREE.Mesh(bodyGeo, woodMat);
+      shieldGroup.add(shieldBody);
+
+      const bossGeo = new THREE.SphereGeometry(0.08, 12, 12);
+      const bossMesh = new THREE.Mesh(bossGeo, goldMat);
+      bossMesh.position.z = 0.025;
+      shieldGroup.add(bossMesh);
+
+      shieldGroup.position.set(-0.38, -0.36, -0.62);
+      shieldGroup.rotation.set(0.1, 0.35, -0.1);
+      player.shieldMesh = shieldGroup;
+      player.viewmodel.add(shieldGroup);
+    }
+
+    /* =========================================================================
+       LEVEL DATA & PROCEDURAL LEVEL BUILDER
+       ========================================================================= */
+    const LEVEL_MAPS = {
+      1: {
+        name: 'The Forgotten Crypt',
+        wallColor: '#2b2a30', wallAccent: '#484652',
+        floorTile: '#38383e', floorGrout: '#1e1e22',
+        map: [
+          "##################",
+          "#P...#.......#...#",
+          "#.L..#..S....#...#",
+          "#....#.......#...#",
+          "#....D.......#...#",
+          "###.##########...#",
+          "#....#......T#...#",
+          "#..L.#..S....#...#",
+          "#....#.......#...#",
+          "#.C..#.......#...#",
+          "######...D########",
+          "#........#.......#",
+          "#..T.....#...L...#",
+          "#..S.....#...S...#",
+          "#........#...X...#",
+          "#........#.......#",
+          "##################",
+          "##################"
+        ]
+      },
+      2: {
+        name: 'The Shadow Caverns',
+        wallColor: '#201c18', wallAccent: '#38322a',
+        floorTile: '#2c2620', floorGrout: '#14120f',
+        map: [
+          "####################",
+          "#P...#.............#",
+          "#....#..G....C.....#",
+          "#..L.#.............#",
+          "###.########.#######",
+          "#........#.........#",
+          "#...W....#....L....#",
+          "#...W....D.........#",
+          "#...W....#....G....#",
+          "#...B....#.........#",
+          "#...W....#####.#####",
+          "#...W....#...T.....#",
+          "#........#...K.....#",
+          "#..L.....#.........#",
+          "####.#####...D######",
+          "#........#...#...X.#",
+          "#...C....#...#.....#",
+          "#...K....#...#..L..#",
+          "#........#...#.....#",
+          "####################"
+        ]
+      },
+      3: {
+        name: "The Dark King's Fortress",
+        wallColor: '#171418', wallAccent: '#2b252d',
+        floorTile: '#2a262c', floorGrout: '#121014',
+        map: [
+          "######################",
+          "#P...#...............#",
+          "#....#..K.....K......#",
+          "#..L.#...............#",
+          "###.########.#########",
+          "#........#...........#",
+          "#...M....#.....L.....#",
+          "#...M....D...........#",
+          "#...M....#...........#",
+          "###.######.###########",
+          "#........#...........#",
+          "#..C..K..#...........#",
+          "#........#.....B.....#",
+          "#........#...........#",
+          "######.###...........#",
+          "#........#...........#",
+          "#..L.....#.....L.....#",
+          "#........#...........#",
+          "#..T.....#.....D...X.#",
+          "#........#...........#",
+          "######################",
+          "######################"
+        ]
+      }
+    };
+
+    let currentLevel = {
+      levelGroup: new THREE.Group(),
+      walls: [],
+      doors: [],
+      chests: [],
+      traps: [],
+      enemies: [],
+      exitPortalPos: null,
+      grid: []
+    };
+
+    function loadLevel(levelNum) {
+      currentLevelIndex = levelNum;
+      scene.remove(currentLevel.levelGroup);
+      currentLevel = {
+        levelGroup: new THREE.Group(),
+        walls: [],
+        doors: [],
+        chests: [],
+        traps: [],
+        enemies: [],
+        exitPortalPos: null,
+        grid: []
+      };
+
+      const lvlData = LEVEL_MAPS[levelNum];
+      document.getElementById('level-title').innerText = `Lv. ${playerStats.level} - ${lvlData.name}`;
+
+      const wallTex = TextureGen.createStoneWall(lvlData.wallColor, lvlData.wallAccent);
+      const floorTex = TextureGen.createFloor(lvlData.floorTile, lvlData.floorGrout);
+      const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.85 });
+      const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.75 });
+
+      const map = lvlData.map;
+      const rows = map.length;
+      const cols = map[0].length;
+      currentLevel.grid = Array(rows).fill(null).map(() => Array(cols).fill(false));
+
+      for (let z = 0; z < rows; z++) {
+        for (let x = 0; x < cols; x++) {
+          const ch = map[z][x];
+          const px = x * TILE_SIZE + TILE_SIZE / 2;
+          const pz = z * TILE_SIZE + TILE_SIZE / 2;
+
+          if (ch === '#') {
+            currentLevel.grid[z][x] = true;
+            const wallGeo = new THREE.BoxGeometry(TILE_SIZE, 4.0, TILE_SIZE);
+            const wall = new THREE.Mesh(wallGeo, wallMat);
+            wall.position.set(px, 2.0, pz);
+            currentLevel.levelGroup.add(wall);
+            currentLevel.walls.push(wall);
+          } else {
+            // Floor & Ceiling
+            const fGeo = new THREE.BoxGeometry(TILE_SIZE, 0.2, TILE_SIZE);
+            const floor = new THREE.Mesh(fGeo, floorMat);
+            floor.position.set(px, -0.1, pz);
+            currentLevel.levelGroup.add(floor);
+
+            const cGeo = new THREE.BoxGeometry(TILE_SIZE, 0.2, TILE_SIZE);
+            const ceil = new THREE.Mesh(cGeo, wallMat);
+            ceil.position.set(px, 4.1, pz);
+            currentLevel.levelGroup.add(ceil);
+
+            if (ch === 'P') {
+              player.pos.set(px, 1.7, pz);
+            } else if (ch === 'L') {
+              createTorch(px, 1.8, pz);
+            } else if (ch === 'S') {
+              createEnemy('Skeleton Warrior', px, pz, 45, 14, 0x9e9e9e);
+            } else if (ch === 'G') {
+              createEnemy('Goblin Skulker', px, pz, 35, 11, 0x4caf50);
+            } else if (ch === 'K') {
+              createEnemy('Armored Knight', px, pz, 90, 24, 0x607d8b);
+            } else if (ch === 'B') {
+              createBoss(px, pz);
+            } else if (ch === 'C') {
+              createChest(px, pz, (levelNum === 1 ? 'crypt_key' : (levelNum === 2 ? 'cavern_key' : 'none')));
+            } else if (ch === 'D') {
+              const reqKey = (z > 8 ? (levelNum === 1 ? 'crypt_key' : (levelNum === 2 ? 'cavern_key' : 'boss_key')) : null);
+              createDoor(px, pz, reqKey);
+            } else if (ch === 'T') {
+              createTrap(px, pz);
+            } else if (ch === 'W') {
+              createWaterTile(px, pz);
+            } else if (ch === 'M') {
+              createLavaTile(px, pz);
+            } else if (ch === 'X') {
+              createExitPortal(px, pz);
+            }
+          }
+        }
+      }
+
+      scene.add(currentLevel.levelGroup);
+    }
+
+    function createTorch(x, y, z) {
+      const torchMat = new THREE.MeshStandardMaterial({ color: 0x332211 });
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4), torchMat);
+      shaft.position.set(x, y, z);
+      currentLevel.levelGroup.add(shaft);
+
+      const pLight = new THREE.PointLight(0xffa726, 1.8, 14);
+      pLight.position.set(x, y + 0.3, z);
+      currentLevel.levelGroup.add(pLight);
+    }
+
+    function createWaterTile(x, z) {
+      const waterMat = new THREE.MeshStandardMaterial({ color: 0x1565c0, roughness: 0.1, metalness: 0.7 });
+      const wMesh = new THREE.Mesh(new THREE.BoxGeometry(TILE_SIZE, 0.1, TILE_SIZE), waterMat);
+      wMesh.position.set(x, -0.15, z);
+      currentLevel.levelGroup.add(wMesh);
+    }
+
+    function createLavaTile(x, z) {
+      const lavaMat = new THREE.MeshStandardMaterial({ color: 0xd84315, roughness: 0.9, emissive: 0xbf360c });
+      const lMesh = new THREE.Mesh(new THREE.BoxGeometry(TILE_SIZE, 0.1, TILE_SIZE), lavaMat);
+      lMesh.position.set(x, -0.15, z);
+      currentLevel.levelGroup.add(lMesh);
+    }
+
+    function createDoor(x, z, requiredKey) {
+      const group = new THREE.Group();
+      group.position.set(x, 0, z);
+
+      const doorLeaf = new THREE.Mesh(
+        new THREE.BoxGeometry(TILE_SIZE * 0.9, 3.8, 0.2),
+        new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.7 })
+      );
+      doorLeaf.position.set(0, 1.9, 0);
+      group.add(doorLeaf);
+
+      currentLevel.levelGroup.add(group);
+      currentLevel.doors.push({
+        group, x, z, isOpen: false, requiredKey,
+        open() {
+          this.isOpen = true;
+          group.rotation.y = Math.PI / 2;
+          AudioEngine.playDoorOpen();
+        }
+      });
+    }
+
+    function createChest(x, z, keyItem) {
+      const group = new THREE.Group();
+      group.position.set(x, 0, z);
+
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 0.45, 0.6),
+        new THREE.MeshStandardMaterial({ color: 0x4e342e, roughness: 0.8 })
+      );
+      base.position.y = 0.22;
+      group.add(base);
+
+      const lid = new THREE.Mesh(
+        new THREE.BoxGeometry(0.92, 0.15, 0.62),
+        new THREE.MeshStandardMaterial({ color: 0xd4af37, roughness: 0.4, metalness: 0.7 })
+      );
+      lid.position.set(0, 0.5, 0);
+      group.add(lid);
+
+      currentLevel.levelGroup.add(group);
+      currentLevel.chests.push({
+        group, lid, x, z, isOpened: false, keyItem,
+        open() {
+          this.isOpened = true;
+          this.lid.rotation.x = -Math.PI / 2.5;
+          AudioEngine.playChestOpen();
+          playerStats.chestsOpened++;
+          playerStats.gold += 65;
+          if (this.keyItem !== 'none') {
+            playerStats.hasKey[this.keyItem] = true;
+            showToast(`Found ${this.keyItem.toUpperCase()} & 65 Gold!`);
+          } else {
+            showToast("Found 65 Gold & Greater Potion!");
+            playerStats.potions++;
+          }
+          updateHUD();
+        }
+      });
+    }
+
+    function createTrap(x, z) {
+      const trapMesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.8, 0.05, 1.8),
+        new THREE.MeshStandardMaterial({ color: 0x212121 })
+      );
+      trapMesh.position.set(x, 0.02, z);
+      currentLevel.levelGroup.add(trapMesh);
+
+      currentLevel.traps.push({
+        x, z, cooldown: 0,
+        trigger() {
+          AudioEngine.playTrap();
+          const dmg = player.isBlocking ? 5 : 22;
+          playerStats.hp = Math.max(0, playerStats.hp - dmg);
+          triggerDamageFlash();
+          showToast(`Spring Trap! (-${dmg} HP)`);
+          updateHUD();
+        }
+      });
+    }
+
+    function createExitPortal(x, z) {
+      const group = new THREE.Group();
+      group.position.set(x, 0, z);
+
+      const portalMesh = new THREE.Mesh(
+        new THREE.TorusGeometry(1.4, 0.2, 16, 32),
+        new THREE.MeshStandardMaterial({ color: 0x00e5ff, emissive: 0x00b0ff, roughness: 0.2 })
+      );
+      portalMesh.position.y = 1.8;
+      group.add(portalMesh);
+
+      currentLevel.levelGroup.add(group);
+      currentLevel.exitPortalPos = new THREE.Vector3(x, 1.7, z);
+    }
+
+    /* =========================================================================
+       ENEMIES & BOSS AI
+       ========================================================================= */
+    function createEnemy(name, x, z, hp, atk, color) {
+      const group = new THREE.Group();
+      group.position.set(x, 0, z);
+
+      const body = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.35, 0.35, 1.8, 12),
+        new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 })
+      );
+      body.position.y = 0.9;
+      group.add(body);
+
+      // Glowing Eyes
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff1744 });
+      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.06), eyeMat);
+      eyeL.position.set(-0.12, 1.5, 0.35);
+      const eyeR = eyeL.clone();
+      eyeR.position.x = 0.12;
+      group.add(eyeL); group.add(eyeR);
+
+      // HP Bar Billboard
+      const hpCanvas = document.createElement('canvas');
+      hpCanvas.width = 128; hpCanvas.height = 16;
+      const hpTex = new THREE.CanvasTexture(hpCanvas);
+      const hpSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: hpTex }));
+      hpSprite.position.y = 2.2;
+      hpSprite.scale.set(1.2, 0.16, 1);
+      group.add(hpSprite);
+
+      const enemy = {
+        name, group, hp, maxHp: hp, atk,
+        pos: group.position,
+        hpCanvas, hpTex,
+        isDead: false,
+        cooldown: 0,
+        isBoss: false,
+
+        update(delta) {
+          if (this.isDead) return;
+          // Look at player & update billboard
+          hpSprite.lookAt(camera.position);
+          this.drawHpBar();
+
+          const dist = this.pos.distanceTo(player.pos);
+          if (dist < 14) {
+            // Chase
+            const dir = new THREE.Vector3().subVectors(player.pos, this.pos);
+            dir.y = 0;
+            if (dist > 2.2) {
+              dir.normalize();
+              this.pos.add(dir.multiplyScalar(delta * 3.2));
+              group.rotation.y = Math.atan2(dir.x, dir.z);
+            } else {
+              // Attack
+              this.cooldown -= delta;
+              if (this.cooldown <= 0) {
+                this.cooldown = 1.4;
+                this.attack();
+              }
+            }
+          }
+        },
+
+        attack() {
+          AudioEngine.playSwordHit();
+          let dmg = this.atk;
+          if (player.isBlocking && playerStats.stamina > 10) {
+            dmg = Math.max(2, Math.floor(dmg * 0.2));
+            playerStats.stamina -= 15;
+            AudioEngine.playShieldBlock();
+          } else {
+            AudioEngine.playHurt();
+          }
+          playerStats.hp = Math.max(0, playerStats.hp - dmg);
+          player.cameraShake = 0.4;
+          triggerDamageFlash();
+          updateHUD();
+        },
+
+        takeDamage(dmg) {
+          this.hp -= dmg;
+          AudioEngine.playSwordHit();
+          if (this.hp <= 0) {
+            this.die();
+          }
+        },
+
+        die() {
+          this.isDead = true;
+          this.group.rotation.x = Math.PI / 2;
+          this.group.position.y = 0.2;
+          playerStats.xp += 40;
+          playerStats.gold += 25;
+          playerStats.enemiesDefeated++;
+          showToast(`Defeated ${this.name}! (+40 XP)`);
+          checkLevelUp();
+          updateHUD();
+        },
+
+        drawHpBar() {
+          const ctx = this.hpCanvas.getContext('2d');
+          ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 128, 16);
+          const ratio = Math.max(0, this.hp / this.maxHp);
+          ctx.fillStyle = '#e53935'; ctx.fillRect(1, 1, 126 * ratio, 14);
+          this.hpTex.needsUpdate = true;
+        }
+      };
+
+      currentLevel.levelGroup.add(group);
+      currentLevel.enemies.push(enemy);
+    }
+
+    function createBoss(x, z) {
+      const group = new THREE.Group();
+      group.position.set(x, 0, z);
+
+      const bossMat = new THREE.MeshStandardMaterial({ color: 0x1f1924, metalness: 0.8, roughness: 0.3 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 3.2, 12), bossMat);
+      body.position.y = 1.6;
+      group.add(body);
+
+      // Horned Crown
+      const hornMat = new THREE.MeshStandardMaterial({ color: 0xd4af37 });
+      const hornL = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.6), hornMat);
+      hornL.position.set(-0.35, 3.3, 0); hornL.rotation.z = -0.4;
+      const hornR = hornL.clone();
+      hornR.position.x = 0.35; hornR.rotation.z = 0.4;
+      group.add(hornL); group.add(hornR);
+
+      // Greatsword
+      const sword = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 2.2, 0.05),
+        new THREE.MeshStandardMaterial({ color: 0xb71c1c, emissive: 0x7f0000 })
+      );
+      sword.position.set(0.8, 1.8, 0.4);
+      group.add(sword);
+
+      const boss = {
+        name: 'The Dark King', group, hp: 320, maxHp: 320, atk: 35,
+        pos: group.position, isDead: false, cooldown: 0, isBoss: true,
+        enraged: false,
+
+        update(delta) {
+          if (this.isDead) return;
+          const dist = this.pos.distanceTo(player.pos);
+          if (dist < 22) {
+            document.getElementById('boss-bar-wrap').style.display = 'flex';
+            document.getElementById('boss-fill').style.width = `${Math.max(0, (this.hp / this.maxHp) * 100)}%`;
+
+            if (!this.enraged && this.hp < 160) {
+              this.enraged = true;
+              this.atk *= 1.3;
+              showToast("THE DARK KING ENRAGES!");
+            }
+
+            const dir = new THREE.Vector3().subVectors(player.pos, this.pos);
+            dir.y = 0;
+            if (dist > 3.0) {
+              dir.normalize();
+              this.pos.add(dir.multiplyScalar(delta * (this.enraged ? 4.5 : 3.4)));
+              group.rotation.y = Math.atan2(dir.x, dir.z);
+            } else {
+              this.cooldown -= delta;
+              if (this.cooldown <= 0) {
+                this.cooldown = this.enraged ? 1.0 : 1.6;
+                this.attack();
+              }
+            }
+          }
+        },
+
+        attack() {
+          AudioEngine.playBossSlam();
+          player.cameraShake = 0.8;
+          let dmg = this.atk;
+          if (player.isBlocking) {
+            dmg = Math.floor(dmg * 0.3);
+            playerStats.stamina = Math.max(0, playerStats.stamina - 30);
+          }
+          playerStats.hp = Math.max(0, playerStats.hp - dmg);
+          triggerDamageFlash();
+          updateHUD();
+        },
+
+        takeDamage(dmg) {
+          this.hp -= dmg;
+          AudioEngine.playSwordHit();
+          if (this.hp <= 0) this.die();
+        },
+
+        die() {
+          this.isDead = true;
+          document.getElementById('boss-bar-wrap').style.display = 'none';
+          this.group.rotation.x = Math.PI / 2;
+          this.group.position.y = 0.3;
+          playerStats.hasKey['boss_key'] = true;
+          playerStats.gold += 300;
+          playerStats.xp += 500;
+          showToast("THE DARK KING IS DEFEATED! Gate unlocked!");
+          checkLevelUp();
+          updateHUD();
+        }
+      };
+
+      currentLevel.levelGroup.add(group);
+      currentLevel.enemies.push(boss);
+    }
+
+    /* =========================================================================
+       COLLISION & MOVEMENT
+       ========================================================================= */
+    function attemptMove(dx, dz) {
+      const radius = 0.45;
+      const nextX = player.pos.x + dx;
+      const nextZ = player.pos.z + dz;
+
+      if (!isColliding(nextX, player.pos.z, radius)) {
+        player.pos.x = nextX;
+      }
+      if (!isColliding(player.pos.x, nextZ, radius)) {
+        player.pos.z = nextZ;
+      }
+
+      // Check traps
+      currentLevel.traps.forEach(trap => {
+        if (Math.hypot(player.pos.x - trap.x, player.pos.z - trap.z) < 1.1) {
+          if (trap.cooldown <= 0) {
+            trap.trigger();
+            trap.cooldown = 2.0;
+          }
+        }
+        if (trap.cooldown > 0) trap.cooldown -= 0.016;
+      });
+    }
+
+    function isColliding(x, z, radius) {
+      const grid = currentLevel.grid;
+      const gx = Math.floor(x / TILE_SIZE);
+      const gz = Math.floor(z / TILE_SIZE);
+
+      for (let rz = gz - 1; rz <= gz + 1; rz++) {
+        for (let rx = gx - 1; rx <= gx + 1; rx++) {
+          if (rz >= 0 && rz < grid.length && rx >= 0 && rx < grid[0].length) {
+            if (grid[rz][rx]) {
+              const minX = rx * TILE_SIZE;
+              const maxX = minX + TILE_SIZE;
+              const minZ = rz * TILE_SIZE;
+              const maxZ = minZ + TILE_SIZE;
+
+              if (x + radius > minX && x - radius < maxX &&
+                  z + radius > minZ && z - radius < maxZ) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+
+      // Closed doors collision
+      for (const d of currentLevel.doors) {
+        if (!d.isOpen && Math.hypot(x - d.x, z - d.z) < 1.4) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    /* =========================================================================
+       COMBAT & INTERACTION RAYCASTING
+       ========================================================================= */
+    let targetedInteractable = null;
+
+    function checkInteractionRaycast() {
+      const promptEl = document.getElementById('interaction-prompt');
+      targetedInteractable = null;
+
+      // Check doors
+      for (const door of currentLevel.doors) {
+        if (!door.isOpen && Math.hypot(player.pos.x - door.x, player.pos.z - door.z) < 2.8) {
+          targetedInteractable = door;
+          promptEl.innerText = door.requiredKey ? `[E] Unlock Door (${door.requiredKey.toUpperCase()})` : "[E] Open Door";
+          promptEl.style.display = 'block';
+          return;
+        }
+      }
+
+      // Check chests
+      for (const chest of currentLevel.chests) {
+        if (!chest.isOpened && Math.hypot(player.pos.x - chest.x, player.pos.z - chest.z) < 2.5) {
+          targetedInteractable = chest;
+          promptEl.innerText = "[E] Open Treasure Chest";
+          promptEl.style.display = 'block';
+          return;
+        }
+      }
+
+      // Check exit portal
+      if (currentLevel.exitPortalPos && player.pos.distanceTo(currentLevel.exitPortalPos) < 2.6) {
+        targetedInteractable = { isPortal: true };
+        promptEl.innerText = "[E] Enter Gateway";
+        promptEl.style.display = 'block';
+        return;
+      }
+
+      promptEl.style.display = 'none';
+    }
+
+    function executePlayerAttack() {
+      if (player.isAttacking || !isGameRunning) return;
+      if (playerStats.stamina < 12) {
+        showToast("Not enough stamina!");
+        return;
+      }
+
+      playerStats.stamina -= 12;
+      player.isAttacking = true;
+      player.swingTimer = 0;
+      AudioEngine.playSwordSwing();
+
+      // Cone Attack Hit Detection
+      const reach = 3.0;
+      const camDir = new THREE.Vector3();
+      camera.getWorldDirection(camDir);
+
+      currentLevel.enemies.forEach(enemy => {
+        if (enemy.isDead) return;
+        const toEnemy = new THREE.Vector3().subVectors(enemy.pos, player.pos);
+        if (toEnemy.length() < reach) {
+          toEnemy.normalize();
+          if (camDir.dot(toEnemy) > 0.5) {
+            const isCrit = Math.random() < 0.2;
+            const dmg = (playerStats.baseAtk + playerStats.equippedWeapon.atk) * (isCrit ? 1.8 : 1.0);
+            enemy.takeDamage(Math.floor(dmg));
+            player.cameraShake = isCrit ? 0.45 : 0.2;
+            showToast(isCrit ? `CRITICAL HIT! (${Math.floor(dmg)})` : `Hit! (${Math.floor(dmg)})`);
+          }
+        }
+      });
+
+      updateHUD();
+    }
+
+    function interact() {
+      if (!targetedInteractable) return;
+      if (targetedInteractable.isOpen !== undefined) {
+        // Door
+        if (targetedInteractable.requiredKey && !playerStats.hasKey[targetedInteractable.requiredKey]) {
+          showToast(`Locked! Requires ${targetedInteractable.requiredKey.toUpperCase()}`);
+        } else {
+          targetedInteractable.open();
+          showToast("Door opened.");
+        }
+      } else if (targetedInteractable.isOpened !== undefined) {
+        // Chest
+        targetedInteractable.open();
+      } else if (targetedInteractable.isPortal) {
+        // Next Level or Victory
+        if (currentLevelIndex < 3) {
+          AudioEngine.playLevelUp();
+          loadLevel(currentLevelIndex + 1);
+          showToast(`Descending to Level ${currentLevelIndex}!`);
+        } else {
+          showVictory();
+        }
+      }
+    }
+
+    function drinkPotion() {
+      if (playerStats.potions > 0) {
+        if (playerStats.hp >= playerStats.maxHp) {
+          showToast("Health already full!");
+          return;
+        }
+        playerStats.potions--;
+        playerStats.hp = Math.min(playerStats.maxHp, playerStats.hp + 40);
+        AudioEngine.playPotion();
+        showToast("Drank Health Potion (+40 HP)");
+        updateHUD();
+      } else {
+        showToast("No potions remaining!");
+      }
+    }
+
+    function checkLevelUp() {
+      if (playerStats.xp >= playerStats.xpNext) {
+        playerStats.xp -= playerStats.xpNext;
+        playerStats.level++;
+        playerStats.xpNext = Math.floor(playerStats.xpNext * 1.5);
+        playerStats.maxHp += 20;
+        playerStats.hp = playerStats.maxHp;
+        playerStats.maxStamina += 15;
+        playerStats.stamina = playerStats.maxStamina;
+        playerStats.baseAtk += 4;
+        AudioEngine.playLevelUp();
+        showToast(`LEVEL UP! Reached Level ${playerStats.level}!`);
+      }
+    }
+
+    /* =========================================================================
+       UI & MINIMAP RADAR
+       ========================================================================= */
+    function updateHUD() {
+      document.getElementById('hp-fill').style.width = `${(playerStats.hp / playerStats.maxHp) * 100}%`;
+      document.getElementById('hp-text').innerText = `HP: ${Math.floor(playerStats.hp)} / ${playerStats.maxHp}`;
+
+      document.getElementById('stamina-fill').style.width = `${(playerStats.stamina / playerStats.maxStamina) * 100}%`;
+      document.getElementById('stamina-text').innerText = `Stamina: ${Math.floor(playerStats.stamina)} / ${playerStats.maxStamina}`;
+
+      document.getElementById('gold-display').innerText = `Gold: ${playerStats.gold}`;
+      document.getElementById('gear-display').innerText = `Weapon: ${playerStats.equippedWeapon.name} | Shield: ${playerStats.equippedShield.name}`;
+      document.getElementById('potion-display').innerText = `[Q] Drink Health Potion (x${playerStats.potions}) | [I] Inventory`;
+
+      drawMinimap();
+
+      // Check player death
+      if (playerStats.hp <= 0 && isGameRunning) {
+        isGameRunning = false;
+        document.exitPointerLock?.();
+        document.getElementById('game-over-modal').style.display = 'flex';
+      }
+    }
+
+    function drawMinimap() {
+      const c = document.getElementById('minimap-canvas');
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#0a0910'; ctx.fillRect(0, 0, 140, 140);
+
+      const grid = currentLevel.grid;
+      if (!grid.length) return;
+      const gw = grid[0].length;
+      const gh = grid.length;
+      const cellW = 140 / gw;
+      const cellH = 140 / gh;
+
+      // Draw walls
+      ctx.fillStyle = '#3a3442';
+      for (let z = 0; z < gh; z++) {
+        for (let x = 0; x < gw; x++) {
+          if (grid[z][x]) ctx.fillRect(x * cellW, z * cellH, cellW, cellH);
+        }
+      }
+
+      // Draw chests
+      ctx.fillStyle = '#ffd700';
+      currentLevel.chests.forEach(ch => {
+        if (!ch.isOpened) {
+          ctx.fillRect((ch.x / TILE_SIZE) * cellW - 1, (ch.z / TILE_SIZE) * cellH - 1, 3, 3);
+        }
+      });
+
+      // Draw enemies
+      ctx.fillStyle = '#ff1744';
+      currentLevel.enemies.forEach(en => {
+        if (!en.isDead) {
+          ctx.fillRect((en.pos.x / TILE_SIZE) * cellW - 1, (en.pos.z / TILE_SIZE) * cellH - 1, en.isBoss ? 5 : 3, en.isBoss ? 5 : 3);
+        }
+      });
+
+      // Draw player arrow
+      const px = (player.pos.x / TILE_SIZE) * cellW;
+      const pz = (player.pos.z / TILE_SIZE) * cellH;
+      ctx.fillStyle = '#00e5ff';
+      ctx.beginPath();
+      ctx.arc(px, pz, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast-msg');
+      t.innerText = msg;
+      t.style.opacity = '1';
+      clearTimeout(t.timer);
+      t.timer = setTimeout(() => t.style.opacity = '0', 2500);
+    }
+
+    function triggerDamageFlash() {
+      const f = document.getElementById('damage-flash');
+      f.style.opacity = '1';
+      setTimeout(() => f.style.opacity = '0', 120);
+    }
+
+    function showVictory() {
+      isGameRunning = false;
+      document.exitPointerLock?.();
+      document.getElementById('victory-stats').innerHTML = `
+        <b>HERO STATISTICS</b><br><br>
+        - Final Level: ${playerStats.level}<br>
+        - Total Gold Acquired: ${playerStats.gold}<br>
+        - Foes Vanquished: ${playerStats.enemiesDefeated}<br>
+        - Chests Plundered: ${playerStats.chestsOpened}<br>
+        - All 3 Dungeon Levels Cleared!
+      `;
+      document.getElementById('victory-modal').style.display = 'flex';
+    }
+
+    /* =========================================================================
+       INPUT & POINTER LOCK
+       ========================================================================= */
+    function initEvents() {
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      // Keyboard Controls
+      window.addEventListener('keydown', e => {
+        const k = e.key.toLowerCase();
+        if (k === 'w') keys.w = true;
+        if (k === 's') keys.s = true;
+        if (k === 'a') keys.a = true;
+        if (k === 'd') keys.d = true;
+        if (e.shiftKey) keys.shift = true;
+        if (k === 'e') interact();
+        if (k === 'q' || k === '1') drinkPotion();
+        if (k === 'i') toggleInventory();
+        if (k === 'escape') togglePause();
+      });
+
+      window.addEventListener('keyup', e => {
+        const k = e.key.toLowerCase();
+        if (k === 'w') keys.w = false;
+        if (k === 's') keys.s = false;
+        if (k === 'a') keys.a = false;
+        if (k === 'd') keys.d = false;
+        if (!e.shiftKey) keys.shift = false;
+      });
+
+      // Mouse Controls & Pointer Lock
+      window.addEventListener('mousedown', e => {
+        if (!isGameRunning || isPaused) return;
+        if (e.button === 0) {
+          executePlayerAttack();
+        } else if (e.button === 2) {
+          player.isBlocking = true;
+        }
+      });
+
+      window.addEventListener('mouseup', e => {
+        if (e.button === 2) player.isBlocking = false;
+      });
+
+      window.addEventListener('contextmenu', e => e.preventDefault());
+
+      document.addEventListener('mousemove', e => {
+        if (document.pointerLockElement && isGameRunning && !isPaused) {
+          player.yaw -= e.movementX * 0.0022;
+          player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - e.movementY * 0.0022));
+
+          camera.rotation.order = 'YXZ';
+          camera.rotation.y = player.yaw;
+          camera.rotation.x = player.pitch;
+        }
+      });
+
+      // Button listeners
+      document.getElementById('btn-start').onclick = () => {
+        AudioEngine.init();
+        document.getElementById('main-menu').style.display = 'none';
+        isGameRunning = true;
+        renderer.domElement.requestPointerLock();
+      };
+
+      document.getElementById('btn-controls').onclick = () => {
+        document.getElementById('controls-modal').style.display = 'flex';
+      };
+
+      document.getElementById('btn-close-controls').onclick = () => {
+        document.getElementById('controls-modal').style.display = 'none';
+      };
+
+      document.getElementById('btn-toggle-sound').onclick = (e) => {
+        AudioEngine.enabled = !AudioEngine.enabled;
+        e.target.innerText = `SOUND: ${AudioEngine.enabled ? 'ON' : 'OFF'}`;
+      };
+
+      document.getElementById('btn-resume').onclick = togglePause;
+      document.getElementById('btn-restart').onclick = () => {
+        togglePause();
+        loadLevel(currentLevelIndex);
+      };
+      document.getElementById('btn-quit').onclick = () => {
+        location.reload();
+      };
+
+      document.getElementById('btn-close-inv').onclick = toggleInventory;
+      document.getElementById('btn-gameover-restart').onclick = () => {
+        location.reload();
+      };
+      document.getElementById('btn-gameover-menu').onclick = () => {
+        location.reload();
+      };
+      document.getElementById('btn-victory-restart').onclick = () => {
+        location.reload();
+      };
+
+      renderer.domElement.onclick = () => {
+        if (isGameRunning && !isPaused && !document.pointerLockElement) {
+          renderer.domElement.requestPointerLock();
+        }
+      };
+    }
+
+    function togglePause() {
+      if (!isGameRunning) return;
+      isPaused = !isPaused;
+      document.getElementById('pause-menu').style.display = isPaused ? 'flex' : 'none';
+      if (isPaused) {
+        document.exitPointerLock?.();
+      } else {
+        renderer.domElement.requestPointerLock();
+      }
+    }
+
+    function toggleInventory() {
+      if (!isGameRunning) return;
+      const invModal = document.getElementById('inv-modal');
+      const isVisible = (invModal.style.display === 'flex');
+      invModal.style.display = isVisible ? 'none' : 'flex';
+      if (!isVisible) {
+        document.exitPointerLock?.();
+        renderInventory();
+      } else {
+        renderer.domElement.requestPointerLock();
+      }
+    }
+
+    function renderInventory() {
+      document.getElementById('inv-stats-summary').innerHTML = `
+        <b>Hero Level:</b> ${playerStats.level} &nbsp;|&nbsp;
+        <b>Attack:</b> ${playerStats.baseAtk + playerStats.equippedWeapon.atk} &nbsp;|&nbsp;
+        <b>Defense:</b> ${playerStats.baseDef + playerStats.equippedShield.def} &nbsp;|&nbsp;
+        <b>Gold:</b> ${playerStats.gold} Coins
+      `;
+
+      const grid = document.getElementById('inv-grid');
+      grid.innerHTML = '';
+      playerStats.inventory.forEach(item => {
+        const slot = document.createElement('div');
+        slot.className = 'inv-slot';
+        slot.innerHTML = `<b>${item.name}</b>`;
+        slot.onclick = () => {
+          document.getElementById('inv-item-details').innerText = `${item.name}: Restores 35 HP.`;
+        };
+        grid.appendChild(slot);
+      });
+    }
+
+    /* =========================================================================
+       MAIN RENDER LOOP
+       ========================================================================= */
+    function animate() {
+      requestAnimationFrame(animate);
+      const delta = Math.min(clock.getDelta(), 0.1);
+
+      if (isGameRunning && !isPaused) {
+        player.update(delta);
+        currentLevel.enemies.forEach(en => en.update(delta));
+      }
+
+      renderer.render(scene, camera);
+    }
+
+    window.onload = initEngine;
+  </script>
+</body>
+</html>
